@@ -838,18 +838,35 @@
   });
 
   // ── Download ─────────────────────────────────────────────
-  function downloadOne(encodedUrl, filename) {
+  async function downloadOne(encodedUrl, filename) {
     if (!encodedUrl || encodedUrl === 'undefined') {
       toast('URL de download não disponível para este vídeo.', 'error');
       return;
     }
     let url = `/api/download?url=${encodedUrl}&filename=${encodeURIComponent(filename)}`;
     if (videoCookie) url += `&cookie=${encodeURIComponent(videoCookie)}`;
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-    toast(`Baixando ${filename}…`);
+
+    toast('Preparando download…');
+    try {
+      const res = await fetch(url);
+      if (!res.ok) {
+        let msg = 'Erro ao baixar. Refaça a busca e tente novamente.';
+        try { const d = await res.json(); msg = d.error || msg; } catch {}
+        toast(msg, 'error');
+        return;
+      }
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(a.href);
+      toast(`${filename} baixado!`);
+    } catch {
+      toast('Falha na conexão ao baixar o vídeo.', 'error');
+    }
   }
 
   document.getElementById('downloadBtn').addEventListener('click', () => {
