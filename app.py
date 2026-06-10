@@ -174,13 +174,18 @@ def search_keyword():
     items = [entry['item'] for entry in raw if 'item' in entry]
 
     video_headers = data.get('$other', {}).get('videoLinkHeaders', {})
+    next_cursor = data.get('nextCursor', '')
+    has_more = data.get('has_more', False)
+
+    # Log temporário para depurar paginação
+    print(f'[SEARCH] cursor_enviado={cursor!r} next_cursor={next_cursor!r} has_more={has_more} itens={len(items)}')
 
     return jsonify({
         'type': 'search',
         'items': items,
         'videoHeaders': video_headers,
-        'cursor': data.get('nextCursor', ''),
-        'hasMore': data.get('has_more', False),
+        'cursor': next_cursor,
+        'hasMore': has_more,
         'quota': get_quota()
     })
 
