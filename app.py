@@ -129,25 +129,37 @@ def quota():
 @login_required
 def search_user():
     username = request.args.get('username', '').strip().lstrip('@')
-    if not username:
-        return jsonify({'error': 'Username obrigatório'}), 400
+    sec_uid  = request.args.get('secUid', '').strip()
+    cursor   = request.args.get('cursor', '').strip()
 
-    status, user_data, _ = tikapi_get('/public/check', {'username': username})
-    if status != 200:
-        return jsonify({'error': 'Usuário não encontrado', 'status_tikapi': status, 'detail': user_data}), 400
+    user_info = None
 
-    user_info = user_data.get('userInfo', {})
-    sec_uid = user_info.get('user', {}).get('secUid', '')
+    if not sec_uid:
+        # Primeira busca: resolve username → secUid
+        if not username:
+            return jsonify({'error': 'Username obrigatório'}), 400
+        status, user_data, _ = tikapi_get('/public/check', {'username': username})
+        if status != 200:
+            return jsonify({'error': 'Usuário não encontrado', 'status_tikapi': status, 'detail': user_data}), 400
+        user_info = user_data.get('userInfo', {})
+        sec_uid = user_info.get('user', {}).get('secUid', '')
 
-    _, posts_data, _ = tikapi_get('/public/posts', {
-        'secUid': sec_uid,
-        'count': 30
-    })
+    params = {'secUid': sec_uid, 'count': 30}
+    if cursor:
+        params['cursor'] = cursor
+
+    _, posts_data, _ = tikapi_get('/public/posts', params)
+
+    video_headers = posts_data.get('$other', {}).get('videoLinkHeaders', {})
 
     return jsonify({
         'type': 'user',
         'user': user_info,
-        'posts': posts_data.get('itemList', []),
+        'items': posts_data.get('itemList', []),
+        'secUid': sec_uid,
+        'cursor': str(posts_data.get('cursor', '')),
+        'hasMore': posts_data.get('hasMore', False),
+        'videoHeaders': video_headers,
         'quota': get_quota()
     })
 

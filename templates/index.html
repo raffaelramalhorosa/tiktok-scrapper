@@ -504,6 +504,7 @@
   let videoCookie = '';      // tt_chain_token necessário para download
   let seenVideoIds = new Set(); // evita duplicatas ao paginar
   let hashtagStates = {};    // {id: {name, cursor, hasMore}} — paginação independente por hashtag
+  let currentSecUid = '';    // secUid do perfil atual para paginação de usuário
 
   // ── Utilitários ─────────────────────────────────────────
   function fmt(n) {
@@ -596,6 +597,7 @@
     seenVideoIds = new Set();
     currentQuery = q;
     hashtagStates = {};
+    currentSecUid = '';
     nextCursor = '';
     hasMore = false;
 
@@ -606,7 +608,10 @@
         data = await res.json();
         if (!res.ok) { showError(data.error || 'Erro desconhecido'); return; }
         renderUserCard(data.user);
-        items = data.posts || [];
+        items = data.items || [];
+        currentSecUid = data.secUid || '';
+        nextCursor = data.cursor || '';
+        hasMore = data.hasMore || false;
       } else if (mode === 'hashtag') {
         const res = await fetch(`/api/search/hashtag?names=${encodeURIComponent(q)}`);
         data = await res.json();
@@ -651,6 +656,8 @@
           .join(',');
         if (!cursors) return;
         url = `/api/search/hashtag?cursors=${encodeURIComponent(cursors)}`;
+      } else if (mode === 'user') {
+        url = `/api/search/user?secUid=${encodeURIComponent(currentSecUid)}&cursor=${encodeURIComponent(nextCursor)}`;
       } else {
         url = `/api/search/keyword?q=${encodeURIComponent(currentQuery)}&cursor=${encodeURIComponent(nextCursor)}`;
       }
@@ -686,7 +693,7 @@
 
   function updateLoadMore() {
     const area = document.getElementById('loadMoreArea');
-    area.style.display = (hasMore && (mode === 'keyword' || mode === 'hashtag')) ? 'block' : 'none';
+    area.style.display = (hasMore && mode !== 'intersect') ? 'block' : 'none';
   }
 
   document.getElementById('loadMoreBtn').addEventListener('click', loadMore);
