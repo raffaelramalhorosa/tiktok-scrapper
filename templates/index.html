@@ -458,6 +458,7 @@
   let nextCursor = '';       // cursor para próxima página
   let hasMore = false;       // se há mais resultados disponíveis
   let videoCookie = '';      // tt_chain_token necessário para download
+  let seenVideoIds = new Set(); // evita duplicatas ao paginar
 
   // ── Utilitários ─────────────────────────────────────────
   function fmt(n) {
@@ -512,6 +513,7 @@
     document.getElementById('toolbar').style.display = 'none';
     document.getElementById('loadMoreArea').style.display = 'none';
     items = [];
+    seenVideoIds = new Set();
     currentQuery = q;
     nextCursor = '';
     hasMore = false;
@@ -668,8 +670,14 @@
   }
 
   function appendItems(list) {
+    const unique = list.filter(item => {
+      if (!item.id || seenVideoIds.has(item.id)) return false;
+      seenVideoIds.add(item.id);
+      return true;
+    });
+    if (unique.length === 0) return;
     const container = document.getElementById('results');
-    container.insertAdjacentHTML('beforeend', buildCards(list));
+    container.insertAdjacentHTML('beforeend', buildCards(unique));
     document.getElementById('countLabel').textContent = `${items.length} vídeo(s) encontrado(s)`;
   }
 
@@ -691,6 +699,8 @@
     label.innerHTML = `${list.length} vídeo(s) encontrado(s)`
       + (summary ? `<br><span style="font-size:0.78rem;color:var(--text-muted)">${summary}</span>` : '');
     label.dataset.summary = '';
+    // Registra IDs da primeira página para deduplicar nas próximas
+    list.forEach(item => { if (item.id) seenVideoIds.add(item.id); });
     container.innerHTML = buildCards(list);
   }
 

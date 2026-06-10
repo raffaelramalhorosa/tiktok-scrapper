@@ -177,9 +177,6 @@ def search_keyword():
     next_cursor = data.get('nextCursor', '')
     has_more = data.get('has_more', False)
 
-    # Log temporário para depurar paginação
-    print(f'[SEARCH] cursor_enviado={cursor!r} next_cursor={next_cursor!r} has_more={has_more} itens={len(items)}')
-
     return jsonify({
         'type': 'search',
         'items': items,
