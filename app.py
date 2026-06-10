@@ -260,6 +260,15 @@ def proxy_download():
 
         resp = requests.get(url, stream=True, headers=headers, timeout=60)
 
+        content_type = resp.headers.get('Content-Type', '')
+        # Se o TikTok retornou HTML/JSON em vez de vídeo, a URL expirou ou o cookie é inválido
+        if resp.status_code != 200 or 'video' not in content_type:
+            return jsonify({
+                'error': 'URL do vídeo expirada ou inválida. Refaça a busca e tente novamente.',
+                'status': resp.status_code,
+                'content_type': content_type
+            }), 400
+
         def stream_chunks():
             for chunk in resp.iter_content(chunk_size=8192):
                 if chunk:

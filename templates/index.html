@@ -457,6 +457,7 @@
   let currentQuery = '';     // última query feita
   let nextCursor = '';       // cursor para próxima página
   let hasMore = false;       // se há mais resultados disponíveis
+  let videoCookie = '';      // tt_chain_token necessário para download
 
   // ── Utilitários ─────────────────────────────────────────
   function fmt(n) {
@@ -547,6 +548,7 @@
       }
 
       if (data.quota) updateQuota(data.quota);
+      if (data.videoHeaders) videoCookie = data.videoHeaders.Cookie || '';
 
       renderItems(items);
       updateLoadMore();
@@ -575,6 +577,7 @@
       items = items.concat(newItems);
 
       if (data.quota) updateQuota(data.quota);
+      if (data.videoHeaders) videoCookie = data.videoHeaders.Cookie || '';
 
       appendItems(newItems);
       updateLoadMore();
@@ -730,7 +733,8 @@
       toast('URL de download não disponível para este vídeo.', 'error');
       return;
     }
-    const url = `/api/download?url=${encodedUrl}&filename=${encodeURIComponent(filename)}`;
+    let url = `/api/download?url=${encodedUrl}&filename=${encodeURIComponent(filename)}`;
+    if (videoCookie) url += `&cookie=${encodeURIComponent(videoCookie)}`;
     const a = document.createElement('a');
     a.href = url;
     a.download = filename;
