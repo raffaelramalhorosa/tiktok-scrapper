@@ -366,20 +366,20 @@
     <button class="tab-btn active" data-mode="keyword">Palavra-chave</button>
     <button class="tab-btn" data-mode="hashtag">Hashtag (#)</button>
     <button class="tab-btn" data-mode="user">Username (@)</button>
+    <button class="tab-btn" data-mode="intersect">Interseção 🔀</button>
   </div>
-  <div class="search-row">
+  <div class="search-row" id="searchRow">
     <input type="text" id="searchInput"
-      placeholder="Ex: fitness, receitas saudáveis, academia"
+      placeholder="Ex: fitness"
       autocomplete="off"
     />
     <button class="btn btn-primary" id="searchBtn">Buscar</button>
   </div>
   <div id="searchHint" style="margin-top:8px;font-size:0.8rem;color:var(--text-muted);line-height:1.6;">
     <span id="hintKeyword">
-      Use <kbd style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:0.75rem;">vírgula</kbd>
-      para buscar múltiplas palavras-chave de uma vez.
-      Ex: <span style="color:var(--text);cursor:pointer;" onclick="fillExample('fitness, receitas fit, treino em casa')">
-        <u>fitness, receitas fit, treino em casa</u>
+      Busque por um único termo ou frase.
+      Ex: <span style="color:var(--text);cursor:pointer;" onclick="fillExample('fitness')">
+        <u>fitness</u>
       </span>
     </span>
     <span id="hintHashtag" style="display:none;">
@@ -417,6 +417,42 @@
   <button class="btn btn-secondary" id="loadMoreBtn" style="min-width:180px;">
     Carregar mais
   </button>
+</div>
+
+<div id="intersectArea" style="display:none; max-width:1200px; margin:0 auto; padding:0 16px 40px;">
+
+  <div style="margin-bottom:40px;">
+    <h3 style="font-size:1rem;font-weight:700;margin-bottom:4px;">Palavras-chave</h3>
+    <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:12px;">
+      Retorna vídeos que aparecem em <strong style="color:var(--text)">todas</strong> as buscas simultaneamente. Mínimo 2 termos.
+    </p>
+    <div class="search-row" style="max-width:860px;margin-bottom:16px;">
+      <input type="text" id="intersectKwInput" placeholder="Ex: lego, minecraft" autocomplete="off" />
+      <button class="btn btn-primary" id="intersectKwBtn">Buscar</button>
+    </div>
+    <div id="intersectKwCount" style="font-size:0.875rem;color:var(--text-muted);margin-bottom:12px;display:none;"></div>
+    <div class="results" id="intersectKwResults" style="max-width:none;margin:0;padding:0 0 16px;">
+      <div class="state-msg"><span class="icon">🔀</span>Faça uma busca para ver a interseção.</div>
+    </div>
+  </div>
+
+  <hr style="border:none;border-top:1px solid var(--border);margin-bottom:40px;" />
+
+  <div>
+    <h3 style="font-size:1rem;font-weight:700;margin-bottom:4px;">Hashtags</h3>
+    <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:12px;">
+      Retorna vídeos marcados com <strong style="color:var(--text)">todas</strong> as hashtags simultaneamente. Mínimo 2 hashtags.
+    </p>
+    <div class="search-row" style="max-width:860px;margin-bottom:16px;">
+      <input type="text" id="intersectHtInput" placeholder="Ex: lego, legotechnic" autocomplete="off" />
+      <button class="btn btn-primary" id="intersectHtBtn">Buscar</button>
+    </div>
+    <div id="intersectHtCount" style="font-size:0.875rem;color:var(--text-muted);margin-bottom:12px;display:none;"></div>
+    <div class="results" id="intersectHtResults" style="max-width:none;margin:0;padding:0 0 16px;">
+      <div class="state-msg"><span class="icon">🔀</span>Faça uma busca para ver a interseção.</div>
+    </div>
+  </div>
+
 </div>
 
 <div class="modal-overlay" id="previewModal" onclick="closePreview(event)">
@@ -493,18 +529,52 @@
   }
 
   // ── Tabs ────────────────────────────────────────────────
+  let _prevToolbar = 'none';
+  let _prevLoadMore = 'none';
+
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
+      const prev = mode;
       mode = btn.dataset.mode;
-      const input = document.getElementById('searchInput');
-    if (mode === 'user')         input.placeholder = 'Ex: nike   (sem o @)';
-    else if (mode === 'hashtag') input.placeholder = 'Ex: lego, lego moc, lego technic';
-    else                         input.placeholder = 'Ex: fitness, receitas saudáveis, academia';
-    document.getElementById('hintKeyword').style.display = mode === 'keyword' ? 'inline' : 'none';
-    document.getElementById('hintHashtag').style.display = mode === 'hashtag' ? 'inline' : 'none';
-    document.getElementById('hintUser').style.display    = mode === 'user'    ? 'inline' : 'none';
+
+      const searchRow    = document.getElementById('searchRow');
+      const searchHint   = document.getElementById('searchHint');
+      const intersectArea = document.getElementById('intersectArea');
+      const normalResults = document.getElementById('results');
+      const toolbar      = document.getElementById('toolbar');
+      const loadMoreArea = document.getElementById('loadMoreArea');
+
+      if (mode === 'intersect') {
+        // Salva estado atual da toolbar e loadMore antes de esconder
+        _prevToolbar  = toolbar.style.display;
+        _prevLoadMore = loadMoreArea.style.display;
+        searchRow.style.display    = 'none';
+        searchHint.style.display   = 'none';
+        normalResults.style.display = 'none';
+        toolbar.style.display      = 'none';
+        loadMoreArea.style.display = 'none';
+        document.getElementById('userCard').style.display = 'none';
+        intersectArea.style.display = 'block';
+      } else {
+        intersectArea.style.display = 'none';
+        searchRow.style.display    = '';
+        searchHint.style.display   = '';
+        normalResults.style.display = '';
+        if (prev === 'intersect') {
+          // Restaura toolbar e loadMore ao sair do modo interseção
+          toolbar.style.display      = _prevToolbar;
+          loadMoreArea.style.display = _prevLoadMore;
+        }
+        const input = document.getElementById('searchInput');
+        if (mode === 'user')         input.placeholder = 'Ex: nike   (sem o @)';
+        else if (mode === 'hashtag') input.placeholder = 'Ex: lego, lego moc, lego technic';
+        else                         input.placeholder = 'Ex: fitness';
+        document.getElementById('hintKeyword').style.display = mode === 'keyword' ? 'inline' : 'none';
+        document.getElementById('hintHashtag').style.display = mode === 'hashtag' ? 'inline' : 'none';
+        document.getElementById('hintUser').style.display    = mode === 'user'    ? 'inline' : 'none';
+      }
     });
   });
 
@@ -545,26 +615,12 @@
         hashtagStates = data.hashtagStates || {};
         hasMore = Object.values(hashtagStates).some(s => s.hasMore);
       } else {
-        const keywords = q.split(',').map(k => k.trim()).filter(Boolean);
-        const isMulti = keywords.length > 1;
-        const endpoint = isMulti
-          ? `/api/search/multi?q=${encodeURIComponent(q)}`
-          : `/api/search/keyword?q=${encodeURIComponent(q)}`;
-
-        const res = await fetch(endpoint);
+        const res = await fetch(`/api/search/keyword?q=${encodeURIComponent(q)}`);
         data = await res.json();
         if (!res.ok) { showError(data.error || 'Erro desconhecido'); return; }
         items = data.items || [];
         nextCursor = data.cursor || '';
         hasMore = data.hasMore || false;
-
-        // Mostra resumo por keyword em busca múltipla
-        if (isMulti && data.keywordCounts) {
-          const summary = Object.entries(data.keywordCounts)
-            .map(([kw, n]) => `<strong>${kw}</strong>: ${n}`)
-            .join(' &nbsp;·&nbsp; ');
-          document.getElementById('countLabel').dataset.summary = summary;
-        }
       }
 
       if (data.quota) updateQuota(data.quota);
@@ -831,6 +887,81 @@
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') closePreview();
   });
+
+  // ── Interseção ───────────────────────────────────────────
+  async function doIntersectKw() {
+    const q = document.getElementById('intersectKwInput').value.trim();
+    const terms = q.split(',').map(k => k.trim()).filter(Boolean);
+    if (terms.length < 2) {
+      showIntersectError('intersectKwResults', 'Informe pelo menos 2 termos separados por vírgula.');
+      return;
+    }
+    document.getElementById('intersectKwCount').style.display = 'none';
+    showIntersectLoading('intersectKwResults');
+    try {
+      const res = await fetch(`/api/search/intersect/keyword?q=${encodeURIComponent(q)}`);
+      const data = await res.json();
+      if (!res.ok) { showIntersectError('intersectKwResults', data.error || 'Erro desconhecido'); return; }
+      if (data.videoHeaders) videoCookie = data.videoHeaders.Cookie || '';
+      if (data.quota) updateQuota(data.quota);
+      renderIntersectItems(data.items || [], 'intersectKwResults', 'intersectKwCount');
+    } catch {
+      showIntersectError('intersectKwResults', 'Falha na conexão com o servidor.');
+    }
+  }
+
+  async function doIntersectHt() {
+    const q = document.getElementById('intersectHtInput').value.trim();
+    const terms = q.split(',').map(n => n.trim()).filter(Boolean);
+    if (terms.length < 2) {
+      showIntersectError('intersectHtResults', 'Informe pelo menos 2 hashtags separadas por vírgula.');
+      return;
+    }
+    document.getElementById('intersectHtCount').style.display = 'none';
+    showIntersectLoading('intersectHtResults');
+    try {
+      const res = await fetch(`/api/search/intersect/hashtag?names=${encodeURIComponent(q)}`);
+      const data = await res.json();
+      if (!res.ok) { showIntersectError('intersectHtResults', data.error || 'Erro desconhecido'); return; }
+      if (data.videoHeaders) videoCookie = data.videoHeaders.Cookie || '';
+      if (data.quota) updateQuota(data.quota);
+      renderIntersectItems(data.items || [], 'intersectHtResults', 'intersectHtCount');
+    } catch {
+      showIntersectError('intersectHtResults', 'Falha na conexão com o servidor.');
+    }
+  }
+
+  function renderIntersectItems(list, containerId, countId) {
+    const container = document.getElementById(containerId);
+    const countEl   = document.getElementById(countId);
+    if (!list || list.length === 0) {
+      container.innerHTML = `
+        <div class="state-msg">
+          <span class="icon">😶</span>
+          Nenhum vídeo em comum encontrado. Tente termos menos populares.
+        </div>`;
+      countEl.style.display = 'none';
+      return;
+    }
+    countEl.textContent = `${list.length} vídeo(s) em comum encontrado(s)`;
+    countEl.style.display = 'block';
+    container.innerHTML = buildCards(list);
+  }
+
+  function showIntersectLoading(containerId) {
+    document.getElementById(containerId).innerHTML = `
+      <div class="state-msg"><div class="spinner"></div>Buscando interseção…</div>`;
+  }
+
+  function showIntersectError(containerId, msg) {
+    document.getElementById(containerId).innerHTML = `
+      <div class="state-msg error"><span class="icon">⚠️</span>${msg}</div>`;
+  }
+
+  document.getElementById('intersectKwBtn').addEventListener('click', doIntersectKw);
+  document.getElementById('intersectHtBtn').addEventListener('click', doIntersectHt);
+  document.getElementById('intersectKwInput').addEventListener('keydown', e => { if (e.key === 'Enter') doIntersectKw(); });
+  document.getElementById('intersectHtInput').addEventListener('keydown', e => { if (e.key === 'Enter') doIntersectHt(); });
 
   // ── Estados de UI ────────────────────────────────────────
   function showLoading() {

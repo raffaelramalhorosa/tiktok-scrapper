@@ -282,53 +282,107 @@ def search_hashtag():
     })
 
 
-@app.route('/api/search/multi')
+@app.route('/api/search/intersect/keyword')
 @login_required
-def search_multi():
-    raw = request.args.get('q', '')
+def intersect_keyword():
+    raw = request.args.get('q', '').strip()
     keywords = [k.strip() for k in raw.split(',') if k.strip()]
-
-    if not keywords:
-        return jsonify({'error': 'Pelo menos uma keyword é obrigatória'}), 400
+    if len(keywords) < 2:
+        return jsonify({'error': 'Mínimo 2 palavras-chave para interseção'}), 400
     if len(keywords) > 5:
-        return jsonify({'error': 'Máximo 5 palavras-chave por busca'}), 400
+        return jsonify({'error': 'Máximo 5 palavras-chave'}), 400
 
-    def fetch_keyword(kw):
-        status, data, _ = tikapi_get('/public/search/general', {
-            'query': kw, 'count': 30, 'type': 'general'
-        })
+    def fetch_kw(kw):
+        status, data, _ = tikapi_get('/public/search/general', {'query': kw, 'count': 30, 'type': 'general'})
         if status != 200:
-            return kw, [], {}
+            return kw, {}, {}
         raw_entries = data.get('data', [])
-        items = [entry['item'] for entry in raw_entries if 'item' in entry]
+        items_list = [entry['item'] for entry in raw_entries if 'item' in entry]
         headers = data.get('$other', {}).get('videoLinkHeaders', {})
-        return kw, items, headers
+        return kw, {item['id']: item for item in items_list if item.get('id')}, headers
 
-    all_items = []
-    seen_ids = set()
+    kw_maps = {}
     video_headers = {}
-    keyword_counts = {}
 
-    # Dispara todas as buscas em paralelo
     with ThreadPoolExecutor(max_workers=5) as executor:
-        futures = {executor.submit(fetch_keyword, kw): kw for kw in keywords}
-        for future in as_completed(futures):
-            kw, items, headers = future.result()
-            keyword_counts[kw] = len(items)
+        for kw, id_map, headers in executor.map(fetch_kw, keywords):
+            kw_maps[kw] = id_map
             if headers:
                 video_headers = headers
-            for item in items:
-                vid_id = item.get('id', '')
-                if vid_id and vid_id not in seen_ids:
-                    seen_ids.add(vid_id)
-                    item['_keyword'] = kw  # indica qual keyword achou este vídeo
-                    all_items.append(item)
+
+    id_sets = [set(m.keys()) for m in kw_maps.values() if m]
+    if len(id_sets) < 2:
+        return jsonify({'type': 'intersect_keyword', 'items': [], 'videoHeaders': video_headers, 'quota': get_quota()})
+
+    common_ids = id_sets[0].intersection(*id_sets[1:])
+
+    all_items_map = {}
+    for id_map in kw_maps.values():
+        for vid_id, item in id_map.items():
+            if vid_id not in all_items_map:
+                all_items_map[vid_id] = item
+
+    items = [all_items_map[vid_id] for vid_id in common_ids if vid_id in all_items_map]
 
     return jsonify({
-        'type': 'multi',
-        'items': all_items,
+        'type': 'intersect_keyword',
+        'items': items,
         'videoHeaders': video_headers,
-        'keywordCounts': keyword_counts,
+        'quota': get_quota()
+    })
+
+
+@app.route('/api/search/intersect/hashtag')
+@login_required
+def intersect_hashtag():
+    names_raw = request.args.get('names', '').strip()
+    names = [n.strip().lstrip('#') for n in names_raw.split(',') if n.strip()]
+    if len(names) < 2:
+        return jsonify({'error': 'Mínimo 2 hashtags para interseção'}), 400
+    if len(names) > 5:
+        return jsonify({'error': 'Máximo 5 hashtags'}), 400
+
+    def resolve_and_fetch(name):
+        status, info_data, _ = tikapi_get('/public/hashtag', {'name': name})
+        if status != 200:
+            return name, {}, {}
+        ht_id = info_data.get('challengeInfo', {}).get('challenge', {}).get('id', '')
+        if not ht_id:
+            return name, {}, {}
+        status, data, _ = tikapi_get('/public/hashtag', {'id': ht_id})
+        if status != 200:
+            return name, {}, {}
+        items_list = data.get('itemList', [])
+        headers = data.get('$other', {}).get('videoLinkHeaders', {})
+        return name, {item['id']: item for item in items_list if item.get('id')}, headers
+
+    ht_maps = {}
+    video_headers = {}
+
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        for name, id_map, headers in executor.map(resolve_and_fetch, names):
+            ht_maps[name] = id_map
+            if headers:
+                video_headers = headers
+
+    id_sets = [set(m.keys()) for m in ht_maps.values() if m]
+    if len(id_sets) < 2:
+        return jsonify({'type': 'intersect_hashtag', 'items': [], 'videoHeaders': video_headers, 'quota': get_quota()})
+
+    common_ids = id_sets[0].intersection(*id_sets[1:])
+
+    all_items_map = {}
+    for id_map in ht_maps.values():
+        for vid_id, item in id_map.items():
+            if vid_id not in all_items_map:
+                all_items_map[vid_id] = item
+
+    items = [all_items_map[vid_id] for vid_id in common_ids if vid_id in all_items_map]
+
+    return jsonify({
+        'type': 'intersect_hashtag',
+        'items': items,
+        'videoHeaders': video_headers,
         'quota': get_quota()
     })
 
