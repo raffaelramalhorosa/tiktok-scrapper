@@ -402,6 +402,7 @@
 
 <div class="toolbar" id="toolbar" style="display:none">
   <span class="count" id="countLabel"></span>
+  <div id="expiryTimer" style="display:none;align-items:center;gap:6px;font-size:0.8rem;margin-right:auto;"></div>
   <button class="btn btn-secondary" id="selectAllBtn">Selecionar todos</button>
   <button class="btn btn-primary" id="downloadBtn">⬇ Baixar selecionados</button>
 </div>
@@ -466,6 +467,60 @@
 <div id="toast"></div>
 
 <script>
+  // ── Contador de expiração de URLs ───────────────────────
+  function extractExpiry(itemsList) {
+    for (const item of itemsList) {
+      const v = item.video || {};
+      const url = v.playAddr || v.downloadAddr || v.play || '';
+      const m = url.match(/x-expires=(\d+)/);
+      if (m) return parseInt(m[1]);
+    }
+    return null;
+  }
+
+  function startExpiryTimer(itemsList) {
+    clearInterval(expiryInterval);
+    const el = document.getElementById('expiryTimer');
+    const ts = extractExpiry(itemsList);
+    if (!ts) { el.style.display = 'none'; return; }
+    expiryTs = ts;
+    tickExpiry();
+    expiryInterval = setInterval(tickExpiry, 1000);
+  }
+
+  function stopExpiryTimer() {
+    clearInterval(expiryInterval);
+    document.getElementById('expiryTimer').style.display = 'none';
+    expiryTs = null;
+  }
+
+  function tickExpiry() {
+    const el = document.getElementById('expiryTimer');
+    const remaining = expiryTs - Math.floor(Date.now() / 1000);
+
+    if (remaining <= 0) {
+      clearInterval(expiryInterval);
+      el.style.display = 'flex';
+      el.style.color = 'var(--accent)';
+      el.innerHTML = '';
+      const span = document.createElement('span');
+      span.textContent = '⚠️ Links expirados';
+      el.appendChild(span);
+      const btn = document.createElement('button');
+      btn.textContent = 'Atualizar busca';
+      btn.style.cssText = 'margin-left:10px;padding:4px 10px;border:1px solid currentColor;border-radius:6px;background:transparent;color:inherit;cursor:pointer;font-size:0.78rem;font-weight:600;';
+      btn.addEventListener('click', doSearch);
+      el.appendChild(btn);
+      return;
+    }
+
+    const m = Math.floor(remaining / 60);
+    const s = String(remaining % 60).padStart(2, '0');
+    el.textContent = `⏱ Links expiram em ${m}:${s}`;
+    el.style.display = 'flex';
+    el.style.color = remaining < 120 ? '#f9a825' : 'var(--text-muted)';
+  }
+
   // ── Quota ───────────────────────────────────────────────
   async function updateQuota(quota) {
     if (!quota) {
@@ -505,6 +560,8 @@
   let seenVideoIds = new Set(); // evita duplicatas ao paginar
   let hashtagStates = {};    // {id: {name, cursor, hasMore}} — paginação independente por hashtag
   let currentSecUid = '';    // secUid do perfil atual para paginação de usuário
+  let expiryTs = null;       // Unix timestamp de expiração das URLs atuais
+  let expiryInterval = null; // intervalo do contador regressivo
 
   // ── Utilitários ─────────────────────────────────────────
   function fmt(n) {
@@ -521,12 +578,22 @@
     return `${m}:${sec}`;
   }
 
-  function toast(msg, type = 'success') {
+  function toast(msg, type = 'success', actionLabel = null, actionFn = null) {
     const el = document.getElementById('toast');
-    el.textContent = msg;
+    el.innerHTML = '';
+    const span = document.createElement('span');
+    span.textContent = msg;
+    el.appendChild(span);
+    if (actionLabel && actionFn) {
+      const btn = document.createElement('button');
+      btn.textContent = actionLabel;
+      btn.style.cssText = 'margin-left:12px;padding:4px 10px;border:1px solid currentColor;border-radius:6px;background:transparent;color:inherit;cursor:pointer;font-size:0.8rem;font-weight:600;';
+      btn.addEventListener('click', () => { el.className = ''; actionFn(); });
+      el.appendChild(btn);
+    }
     el.className = `show ${type}`;
     clearTimeout(el._timer);
-    el._timer = setTimeout(() => el.className = '', 3000);
+    el._timer = setTimeout(() => el.className = '', actionLabel ? 8000 : 3000);
   }
 
   // ── Tabs ────────────────────────────────────────────────
@@ -590,6 +657,7 @@
     if (!q) return;
 
     showLoading();
+    stopExpiryTimer();
     document.getElementById('userCard').style.display = 'none';
     document.getElementById('toolbar').style.display = 'none';
     document.getElementById('loadMoreArea').style.display = 'none';
@@ -632,6 +700,7 @@
       if (data.videoHeaders) videoCookie = data.videoHeaders.Cookie || '';
 
       renderItems(items);
+      startExpiryTimer(items);
       updateLoadMore();
     } catch (err) {
       showError('Falha na conexão com o servidor.');
@@ -850,9 +919,10 @@
     try {
       const res = await fetch(url);
       if (!res.ok) {
-        let msg = 'Erro ao baixar. Refaça a busca e tente novamente.';
+        let msg = 'URL expirada. Atualize a busca para gerar novos links.';
         try { const d = await res.json(); msg = d.error || msg; } catch {}
-        toast(msg, 'error');
+        const canRefresh = mode !== 'intersect';
+        toast(msg, 'error', canRefresh ? 'Atualizar busca' : null, canRefresh ? doSearch : null);
         return;
       }
       const blob = await res.blob();
