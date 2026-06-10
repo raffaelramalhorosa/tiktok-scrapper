@@ -11,6 +11,7 @@ load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY', 'dev-key-troque-em-producao')
+app.config['TEMPLATES_AUTO_RELOAD'] = True
 
 # Necessário para o Flask gerar URLs corretas (https) quando está atrás do proxy do Render
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -199,7 +200,7 @@ def search_hashtag():
 
     # Se não temos o ID ainda, busca as informações da hashtag primeiro
     if not hashtag_id:
-        status, info_data, _ = tikapi_get('/public/hashtag/info', {'name': name})
+        status, info_data, _ = tikapi_get('/public/hashtag', {'name': name})
         if status != 200:
             return jsonify({'error': 'Hashtag não encontrada', 'status_tikapi': status, 'detail': info_data}), 400
         hashtag_info = info_data.get('challengeInfo', {}).get('challenge', {})
@@ -208,11 +209,11 @@ def search_hashtag():
             return jsonify({'error': 'ID da hashtag não encontrado na resposta'}), 400
 
     # Busca os posts da hashtag (paginação real via cursor)
-    params = {'id': hashtag_id, 'count': 30}
+    params = {'id': hashtag_id}
     if cursor:
         params['cursor'] = cursor
 
-    status, data, _ = tikapi_get('/public/hashtag/posts', params)
+    status, data, _ = tikapi_get('/public/hashtag', params)
     if status != 200:
         return jsonify({'error': 'Erro ao buscar posts da hashtag', 'status_tikapi': status, 'detail': data}), 400
 
