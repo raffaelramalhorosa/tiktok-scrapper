@@ -191,42 +191,93 @@ def search_keyword():
 @app.route('/api/search/hashtag')
 @login_required
 def search_hashtag():
-    name = request.args.get('name', '').strip().lstrip('#')
-    cursor = request.args.get('cursor', '')
-    hashtag_id = request.args.get('id', '')
+    names_raw  = request.args.get('names', '').strip() or request.args.get('name', '').strip()
+    cursors_raw = request.args.get('cursors', '').strip()
 
-    if not name:
+    if not names_raw and not cursors_raw:
         return jsonify({'error': 'Nome da hashtag obrigatório'}), 400
 
-    # Se não temos o ID ainda, busca as informações da hashtag primeiro
-    if not hashtag_id:
-        status, info_data, _ = tikapi_get('/public/hashtag', {'name': name})
+    def resolve_name(name):
+        """Retorna (hashtag_id, name) ou (None, name) se não encontrado."""
+        status, info_data, _ = tikapi_get('/public/hashtag', {'name': name.lstrip('#')})
         if status != 200:
-            return jsonify({'error': 'Hashtag não encontrada', 'status_tikapi': status, 'detail': info_data}), 400
-        hashtag_info = info_data.get('challengeInfo', {}).get('challenge', {})
-        hashtag_id = hashtag_info.get('id', '')
-        if not hashtag_id:
-            return jsonify({'error': 'ID da hashtag não encontrado na resposta'}), 400
+            return None, name
+        ht_id = info_data.get('challengeInfo', {}).get('challenge', {}).get('id', '')
+        return (ht_id or None), name
 
-    # Busca os posts da hashtag (paginação real via cursor)
-    params = {'id': hashtag_id}
-    if cursor:
-        params['cursor'] = cursor
+    def fetch_posts(ht_id, cursor=None):
+        """Retorna (items, video_headers, next_cursor, has_more)."""
+        params = {'id': ht_id}
+        if cursor:
+            params['cursor'] = cursor
+        status, data, _ = tikapi_get('/public/hashtag', params)
+        if status != 200:
+            return [], {}, None, False
+        items = data.get('itemList', [])
+        headers = data.get('$other', {}).get('videoLinkHeaders', {})
+        next_cursor = str(data.get('cursor', '')) or None
+        has_more = bool(data.get('hasMore', False))
+        return items, headers, next_cursor, has_more
 
-    status, data, _ = tikapi_get('/public/hashtag', params)
-    if status != 200:
-        return jsonify({'error': 'Erro ao buscar posts da hashtag', 'status_tikapi': status, 'detail': data}), 400
+    all_items    = []
+    seen_ids     = set()
+    video_headers = {}
+    hashtag_states = {}  # {id: {name, cursor, hasMore}}
 
-    items = data.get('itemList', [])
-    video_headers = data.get('$other', {}).get('videoLinkHeaders', {})
+    if names_raw:
+        # Primeira busca: resolve nomes → IDs e busca primeira página em paralelo
+        names = [n.strip() for n in names_raw.split(',') if n.strip()][:5]
+
+        def resolve_and_fetch(name):
+            ht_id, name = resolve_name(name)
+            if not ht_id:
+                return name, None, [], {}, None, False
+            items, headers, next_cursor, has_more = fetch_posts(ht_id)
+            return name, ht_id, items, headers, next_cursor, has_more
+
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            for name, ht_id, items, headers, next_cursor, has_more in executor.map(resolve_and_fetch, names):
+                if not ht_id:
+                    continue
+                hashtag_states[ht_id] = {'name': name, 'cursor': next_cursor, 'hasMore': has_more}
+                if headers:
+                    video_headers = headers
+                for item in items:
+                    vid_id = item.get('id', '')
+                    if vid_id and vid_id not in seen_ids:
+                        seen_ids.add(vid_id)
+                        item['_hashtag'] = name
+                        all_items.append(item)
+
+    else:
+        # Load more: formato "id1:cursor1,id2:cursor2"
+        pairs = []
+        for part in cursors_raw.split(','):
+            if ':' in part:
+                ht_id, cursor = part.split(':', 1)
+                pairs.append((ht_id.strip(), cursor.strip()))
+
+        def fetch_more(pair):
+            ht_id, cursor = pair
+            items, headers, next_cursor, has_more = fetch_posts(ht_id, cursor)
+            return ht_id, items, headers, next_cursor, has_more
+
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            for ht_id, items, headers, next_cursor, has_more in executor.map(fetch_more, pairs):
+                hashtag_states[ht_id] = {'cursor': next_cursor, 'hasMore': has_more}
+                if headers:
+                    video_headers = headers
+                for item in items:
+                    vid_id = item.get('id', '')
+                    if vid_id and vid_id not in seen_ids:
+                        seen_ids.add(vid_id)
+                        all_items.append(item)
 
     return jsonify({
         'type': 'hashtag',
-        'items': items,
-        'hashtagId': hashtag_id,
+        'items': all_items,
+        'hashtagStates': hashtag_states,
         'videoHeaders': video_headers,
-        'cursor': str(data.get('cursor', '')),
-        'hasMore': data.get('hasMore', False),
         'quota': get_quota()
     })
 

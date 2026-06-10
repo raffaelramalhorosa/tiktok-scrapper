@@ -383,9 +383,10 @@
       </span>
     </span>
     <span id="hintHashtag" style="display:none;">
-      Digite a hashtag sem o #. Suporta paginação real — carregue quantas páginas quiser.
-      Ex: <span style="color:var(--text);cursor:pointer;" onclick="fillExample('lego')">
-        <u>lego</u>
+      Use <kbd style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:0.75rem;">vírgula</kbd>
+      para buscar múltiplas hashtags. Cada uma tem paginação independente.
+      Ex: <span style="color:var(--text);cursor:pointer;" onclick="fillExample('lego, lego moc, lego technic')">
+        <u>lego, lego moc, lego technic</u>
       </span>
     </span>
     <span id="hintUser" style="display:none;">
@@ -466,7 +467,7 @@
   let hasMore = false;       // se há mais resultados disponíveis
   let videoCookie = '';      // tt_chain_token necessário para download
   let seenVideoIds = new Set(); // evita duplicatas ao paginar
-  let currentHashtagId = ''; // ID da hashtag atual para paginação
+  let hashtagStates = {};    // {id: {name, cursor, hasMore}} — paginação independente por hashtag
 
   // ── Utilitários ─────────────────────────────────────────
   function fmt(n) {
@@ -499,7 +500,7 @@
       mode = btn.dataset.mode;
       const input = document.getElementById('searchInput');
     if (mode === 'user')         input.placeholder = 'Ex: nike   (sem o @)';
-    else if (mode === 'hashtag') input.placeholder = 'Ex: lego   (sem o #)';
+    else if (mode === 'hashtag') input.placeholder = 'Ex: lego, lego moc, lego technic';
     else                         input.placeholder = 'Ex: fitness, receitas saudáveis, academia';
     document.getElementById('hintKeyword').style.display = mode === 'keyword' ? 'inline' : 'none';
     document.getElementById('hintHashtag').style.display = mode === 'hashtag' ? 'inline' : 'none';
@@ -524,7 +525,7 @@
     items = [];
     seenVideoIds = new Set();
     currentQuery = q;
-    currentHashtagId = '';
+    hashtagStates = {};
     nextCursor = '';
     hasMore = false;
 
@@ -537,13 +538,12 @@
         renderUserCard(data.user);
         items = data.posts || [];
       } else if (mode === 'hashtag') {
-        const res = await fetch(`/api/search/hashtag?name=${encodeURIComponent(q)}`);
+        const res = await fetch(`/api/search/hashtag?names=${encodeURIComponent(q)}`);
         data = await res.json();
         if (!res.ok) { showError(data.error || 'Erro desconhecido'); return; }
         items = data.items || [];
-        currentHashtagId = data.hashtagId || '';
-        nextCursor = data.cursor || '';
-        hasMore = data.hasMore || false;
+        hashtagStates = data.hashtagStates || {};
+        hasMore = Object.values(hashtagStates).some(s => s.hasMore);
       } else {
         const keywords = q.split(',').map(k => k.trim()).filter(Boolean);
         const isMulti = keywords.length > 1;
@@ -578,7 +578,8 @@
   }
 
   async function loadMore() {
-    if (!hasMore || !nextCursor || !currentQuery) return;
+    if (!hasMore) return;
+    if (mode !== 'hashtag' && (!nextCursor || !currentQuery)) return;
 
     const btn = document.getElementById('loadMoreBtn');
     btn.disabled = true;
@@ -587,7 +588,13 @@
     try {
       let url;
       if (mode === 'hashtag') {
-        url = `/api/search/hashtag?name=${encodeURIComponent(currentQuery)}&id=${encodeURIComponent(currentHashtagId)}&cursor=${encodeURIComponent(nextCursor)}`;
+        // Monta "id1:cursor1,id2:cursor2" apenas para os que ainda têm mais
+        const cursors = Object.entries(hashtagStates)
+          .filter(([, s]) => s.hasMore && s.cursor)
+          .map(([id, s]) => `${id}:${s.cursor}`)
+          .join(',');
+        if (!cursors) return;
+        url = `/api/search/hashtag?cursors=${encodeURIComponent(cursors)}`;
       } else {
         url = `/api/search/keyword?q=${encodeURIComponent(currentQuery)}&cursor=${encodeURIComponent(nextCursor)}`;
       }
@@ -597,9 +604,16 @@
       if (!res.ok) { toast(data.error || 'Erro ao carregar mais.', 'error'); return; }
 
       const newItems = data.items || [];
-      nextCursor = data.cursor || '';
-      hasMore = data.hasMore || false;
       items = items.concat(newItems);
+
+      if (mode === 'hashtag') {
+        // Atualiza cursor/hasMore de cada hashtag que respondeu
+        Object.assign(hashtagStates, data.hashtagStates || {});
+        hasMore = Object.values(hashtagStates).some(s => s.hasMore);
+      } else {
+        nextCursor = data.cursor || '';
+        hasMore = data.hasMore || false;
+      }
 
       if (data.quota) updateQuota(data.quota);
       if (data.videoHeaders) videoCookie = data.videoHeaders.Cookie || '';
@@ -666,6 +680,7 @@
           </div>
           <div class="card-body">
             ${item._keyword ? `<div><span class="keyword-badge">${item._keyword}</span></div>` : ''}
+            ${item._hashtag ? `<div><span class="keyword-badge" style="background:rgba(254,44,85,0.12);color:var(--accent);border-color:rgba(254,44,85,0.25)">#${item._hashtag}</span></div>` : ''}
             <div class="card-author">
               <img src="${a.avatarThumb || a.avatarLarger || a.avatarMedium || ''}" alt="${a.uniqueId}"
                    onerror="this.src='https://placehold.co/24x24/1a1a1a/888?text=?'" />
