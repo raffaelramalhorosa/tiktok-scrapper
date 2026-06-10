@@ -187,6 +187,49 @@ def search_keyword():
     })
 
 
+@app.route('/api/search/hashtag')
+@login_required
+def search_hashtag():
+    name = request.args.get('name', '').strip().lstrip('#')
+    cursor = request.args.get('cursor', '')
+    hashtag_id = request.args.get('id', '')
+
+    if not name:
+        return jsonify({'error': 'Nome da hashtag obrigatório'}), 400
+
+    # Se não temos o ID ainda, busca as informações da hashtag primeiro
+    if not hashtag_id:
+        status, info_data, _ = tikapi_get('/public/hashtag/info', {'name': name})
+        if status != 200:
+            return jsonify({'error': 'Hashtag não encontrada', 'status_tikapi': status, 'detail': info_data}), 400
+        hashtag_info = info_data.get('challengeInfo', {}).get('challenge', {})
+        hashtag_id = hashtag_info.get('id', '')
+        if not hashtag_id:
+            return jsonify({'error': 'ID da hashtag não encontrado na resposta'}), 400
+
+    # Busca os posts da hashtag (paginação real via cursor)
+    params = {'id': hashtag_id, 'count': 30}
+    if cursor:
+        params['cursor'] = cursor
+
+    status, data, _ = tikapi_get('/public/hashtag/posts', params)
+    if status != 200:
+        return jsonify({'error': 'Erro ao buscar posts da hashtag', 'status_tikapi': status, 'detail': data}), 400
+
+    items = data.get('itemList', [])
+    video_headers = data.get('$other', {}).get('videoLinkHeaders', {})
+
+    return jsonify({
+        'type': 'hashtag',
+        'items': items,
+        'hashtagId': hashtag_id,
+        'videoHeaders': video_headers,
+        'cursor': str(data.get('cursor', '')),
+        'hasMore': data.get('hasMore', False),
+        'quota': get_quota()
+    })
+
+
 @app.route('/api/search/multi')
 @login_required
 def search_multi():

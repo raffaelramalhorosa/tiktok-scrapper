@@ -364,6 +364,7 @@
 <div class="search-area">
   <div class="search-tabs">
     <button class="tab-btn active" data-mode="keyword">Palavra-chave</button>
+    <button class="tab-btn" data-mode="hashtag">Hashtag (#)</button>
     <button class="tab-btn" data-mode="user">Username (@)</button>
   </div>
   <div class="search-row">
@@ -379,6 +380,12 @@
       para buscar múltiplas palavras-chave de uma vez.
       Ex: <span style="color:var(--text);cursor:pointer;" onclick="fillExample('fitness, receitas fit, treino em casa')">
         <u>fitness, receitas fit, treino em casa</u>
+      </span>
+    </span>
+    <span id="hintHashtag" style="display:none;">
+      Digite a hashtag sem o #. Suporta paginação real — carregue quantas páginas quiser.
+      Ex: <span style="color:var(--text);cursor:pointer;" onclick="fillExample('lego')">
+        <u>lego</u>
       </span>
     </span>
     <span id="hintUser" style="display:none;">
@@ -459,6 +466,7 @@
   let hasMore = false;       // se há mais resultados disponíveis
   let videoCookie = '';      // tt_chain_token necessário para download
   let seenVideoIds = new Set(); // evita duplicatas ao paginar
+  let currentHashtagId = ''; // ID da hashtag atual para paginação
 
   // ── Utilitários ─────────────────────────────────────────
   function fmt(n) {
@@ -490,11 +498,12 @@
       btn.classList.add('active');
       mode = btn.dataset.mode;
       const input = document.getElementById('searchInput');
-      input.placeholder = mode === 'user'
-        ? 'Ex: nike   (sem o @)'
-        : 'Ex: fitness, receitas saudáveis, academia';
-      document.getElementById('hintKeyword').style.display = mode === 'user' ? 'none' : 'inline';
-      document.getElementById('hintUser').style.display   = mode === 'user' ? 'inline' : 'none';
+    if (mode === 'user')         input.placeholder = 'Ex: nike   (sem o @)';
+    else if (mode === 'hashtag') input.placeholder = 'Ex: lego   (sem o #)';
+    else                         input.placeholder = 'Ex: fitness, receitas saudáveis, academia';
+    document.getElementById('hintKeyword').style.display = mode === 'keyword' ? 'inline' : 'none';
+    document.getElementById('hintHashtag').style.display = mode === 'hashtag' ? 'inline' : 'none';
+    document.getElementById('hintUser').style.display    = mode === 'user'    ? 'inline' : 'none';
     });
   });
 
@@ -515,6 +524,7 @@
     items = [];
     seenVideoIds = new Set();
     currentQuery = q;
+    currentHashtagId = '';
     nextCursor = '';
     hasMore = false;
 
@@ -526,6 +536,14 @@
         if (!res.ok) { showError(data.error || 'Erro desconhecido'); return; }
         renderUserCard(data.user);
         items = data.posts || [];
+      } else if (mode === 'hashtag') {
+        const res = await fetch(`/api/search/hashtag?name=${encodeURIComponent(q)}`);
+        data = await res.json();
+        if (!res.ok) { showError(data.error || 'Erro desconhecido'); return; }
+        items = data.items || [];
+        currentHashtagId = data.hashtagId || '';
+        nextCursor = data.cursor || '';
+        hasMore = data.hasMore || false;
       } else {
         const keywords = q.split(',').map(k => k.trim()).filter(Boolean);
         const isMulti = keywords.length > 1;
@@ -567,9 +585,14 @@
     btn.textContent = 'Carregando…';
 
     try {
-      const res = await fetch(
-        `/api/search/keyword?q=${encodeURIComponent(currentQuery)}&cursor=${encodeURIComponent(nextCursor)}`
-      );
+      let url;
+      if (mode === 'hashtag') {
+        url = `/api/search/hashtag?name=${encodeURIComponent(currentQuery)}&id=${encodeURIComponent(currentHashtagId)}&cursor=${encodeURIComponent(nextCursor)}`;
+      } else {
+        url = `/api/search/keyword?q=${encodeURIComponent(currentQuery)}&cursor=${encodeURIComponent(nextCursor)}`;
+      }
+
+      const res = await fetch(url);
       const data = await res.json();
       if (!res.ok) { toast(data.error || 'Erro ao carregar mais.', 'error'); return; }
 
@@ -593,8 +616,7 @@
 
   function updateLoadMore() {
     const area = document.getElementById('loadMoreArea');
-    // Só mostra o botão em buscas por palavra-chave (user não tem paginação na API)
-    area.style.display = (hasMore && mode === 'keyword') ? 'block' : 'none';
+    area.style.display = (hasMore && (mode === 'keyword' || mode === 'hashtag')) ? 'block' : 'none';
   }
 
   document.getElementById('loadMoreBtn').addEventListener('click', loadMore);
