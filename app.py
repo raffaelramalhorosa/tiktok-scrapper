@@ -12,6 +12,10 @@ load_dotenv()
 app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY', 'dev-key-troque-em-producao')
 
+# Necessário para o Flask gerar URLs corretas (https) quando está atrás do proxy do Render
+from werkzeug.middleware.proxy_fix import ProxyFix
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
 TIKAPI_KEY    = os.getenv('TIKAPI_KEY', '')
 APP_PASSWORD  = os.getenv('APP_PASSWORD', '')
 DAILY_LIMIT   = int(os.getenv('TIKAPI_DAILY_LIMIT', 100))
