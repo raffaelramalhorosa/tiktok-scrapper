@@ -132,16 +132,14 @@ def search_user():
     if not username:
         return jsonify({'error': 'Username obrigatório'}), 400
 
-    status, user_data, _ = tikapi_get('/public/user/info', {'username': username})
+    status, user_data, _ = tikapi_get('/public/check', {'username': username})
     if status != 200:
         return jsonify({'error': 'Usuário não encontrado', 'status_tikapi': status, 'detail': user_data}), 400
 
     user_info = user_data.get('userInfo', {})
-    user_id = user_info.get('user', {}).get('id', '')
     sec_uid = user_info.get('user', {}).get('secUid', '')
 
-    _, posts_data, _ = tikapi_get('/public/user/posts', {
-        'id': user_id,
+    _, posts_data, _ = tikapi_get('/public/posts', {
         'secUid': sec_uid,
         'count': 30
     })
